@@ -1,5 +1,6 @@
+flask
+requests
+yfinance
 pandas
 numpy
-yfinance
-requests
-apscheduler
+ta
