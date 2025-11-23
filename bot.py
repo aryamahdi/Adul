@@ -340,6 +340,108 @@ Powered by Stockbit API
             logger.error(f"Error in signals_today: {e}")
             await update.message.reply_text(f"❌ Error: {str(e)}")
     
+    async def add_holding(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Command /addholding TICKER LOT AVG_PRICE"""
+        if len(context.args) < 3:
+            await update.message.reply_text(
+                "⚠️ Format: /addholding TICKER LOT AVG_PRICE\n"
+                "Contoh: /addholding BBCA 5 8500\n"
+                "(5 lot BBCA dengan avg price 8500)"
+            )
+            return
+        
+        user_id = update.effective_user.id
+        ticker = context.args[0].upper()
+        
+        try:
+            lot = int(context.args[1])
+            avg_price = float(context.args[2])
+            
+            # Validate ticker
+            is_valid = await scanner.validate_ticker(ticker)
+            if not is_valid:
+                await update.message.reply_text(f"❌ {ticker} tidak valid")
+                return
+            
+            # Get or create portfolio
+            if user_id not in user_portfolios:
+                user_portfolios[user_id] = ManualPortfolio(user_id)
+            
+            portfolio = user_portfolios[user_id]
+            portfolio.add_holding(ticker, lot, avg_price)
+            
+            await update.message.reply_text(
+                f"✅ Berhasil menambahkan:\n"
+                f"• {ticker}: {lot} lot @ Rp {avg_price:,.0f}"
+            )
+            
+        except ValueError:
+            await update.message.reply_text("❌ Lot dan avg_price harus berupa angka")
+    
+    async def remove_holding(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Command /removeholding TICKER"""
+        if not context.args:
+            await update.message.reply_text("⚠️ Format: /removeholding TICKER")
+            return
+        
+        user_id = update.effective_user.id
+        ticker = context.args[0].upper()
+        
+        if user_id not in user_portfolios:
+            await update.message.reply_text("📋 Portfolio kosong")
+            return
+        
+        portfolio = user_portfolios[user_id]
+        portfolio.remove_holding(ticker)
+        
+        await update.message.reply_text(f"✅ {ticker} dihapus dari portfolio")
+    
+    async def market_overview(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Command /market - Show market overview"""
+        await update.message.reply_text("📊 Mengambil data pasar...")
+        
+        try:
+            # Get IHSG data
+            ihsg = await sectors.get_idx_composite()
+            
+            # Get top gainers and losers
+            gainers = await sectors.get_top_gainers(limit=5)
+            losers = await sectors.get_top_losers(limit=5)
+            most_active = await sectors.get_most_active(limit=5)
+            
+            report = "📊 *RINGKASAN PASAR IDX*\n"
+            report += f"⏰ {datetime.now().strftime('%d/%m/%Y %H:%M')}\n"
+            report += "=" * 35 + "\n\n"
+            
+            if ihsg:
+                report += f"*IHSG*\n"
+                report += f"Level: {ihsg.get('close', 0):,.2f}\n"
+                report += f"Change: {ihsg.get('change_percent', 0):.2f}%\n\n"
+            
+            if gainers:
+                report += "*🟢 Top Gainers:*\n"
+                for stock in gainers[:5]:
+                    report += f"• {stock['symbol']}: +{stock.get('change_percent', 0):.2f}%\n"
+                report += "\n"
+            
+            if losers:
+                report += "*🔴 Top Losers:*\n"
+                for stock in losers[:5]:
+                    report += f"• {stock['symbol']}: {stock.get('change_percent', 0):.2f}%\n"
+                report += "\n"
+            
+            if most_active:
+                report += "*📊 Most Active:*\n"
+                for stock in most_active[:5]:
+                    vol = stock.get('volume', 0)
+                    report += f"• {stock['symbol']}: {vol/1e9:.2f}B\n"
+            
+            await update.message.reply_text(report, parse_mode='Markdown')
+            
+        except Exception as e:
+            logger.error(f"Error in market_overview: {e}")
+            await update.message.reply_text(f"❌ Error: {str(e)}")
+    
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Command /help"""
         help_text = """
@@ -598,6 +700,9 @@ def main():
     application.add_handler(CommandHandler("scan", bot.scan_all))
     application.add_handler(CommandHandler("analyze", bot.analyze_ticker))
     application.add_handler(CommandHandler("portfolio", bot.show_portfolio))
+    application.add_handler(CommandHandler("addholding", bot.add_holding))
+    application.add_handler(CommandHandler("removeholding", bot.remove_holding))
+    application.add_handler(CommandHandler("market", bot.market_overview))
     application.add_handler(CommandHandler("watchlist", bot.watchlist_menu))
     application.add_handler(CommandHandler("add", bot.add_to_watchlist))
     application.add_handler(CommandHandler("remove", bot.remove_from_watchlist))
