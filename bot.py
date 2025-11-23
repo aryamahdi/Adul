@@ -4,7 +4,7 @@ import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 from scanner import StockScanner
-from stockbit_api import StockbitAPI
+from sectors_api import SectorsAPI, ManualPortfolio
 from datetime import datetime, time as dt_time
 import asyncio
 
@@ -17,13 +17,12 @@ logger = logging.getLogger(__name__)
 
 # Environment variables
 BOT_TOKEN = os.getenv('BOT_TOKEN')
-STOCKBIT_EMAIL = os.getenv('STOCKBIT_EMAIL')
-STOCKBIT_PASSWORD = os.getenv('STOCKBIT_PASSWORD')
+SECTORS_API_KEY = os.getenv('SECTORS_API_KEY')
 ADMIN_CHAT_ID = os.getenv('ADMIN_CHAT_ID')
 
 # Initialize
 scanner = StockScanner()
-stockbit = StockbitAPI(STOCKBIT_EMAIL, STOCKBIT_PASSWORD)
+sectors = SectorsAPI(SECTORS_API_KEY)
 
 # Watchlist database (dalam produksi gunakan database seperti PostgreSQL)
 user_watchlists = {}
