@@ -253,14 +253,32 @@ class TradingBot:
             await update.message.reply_text(f"ℹ️ {ticker} sudah ada di watchlist")
             return
         
-        # Validate ticker
-        is_valid = await scanner.validate_ticker(ticker)
-        if not is_valid:
-            await update.message.reply_text(f"❌ {ticker} tidak ditemukan atau tidak valid")
-            return
+        # Send validating message
+        validating_msg = await update.message.reply_text(f"🔍 Validating {ticker}...")
         
-        user_watchlists[user_id].append(ticker)
-        await update.message.reply_text(f"✅ {ticker} ditambahkan ke watchlist")
+        # Validate ticker
+        try:
+            is_valid = await scanner.validate_ticker(ticker)
+            
+            if is_valid:
+                user_watchlists[user_id].append(ticker)
+                await validating_msg.edit_text(f"✅ {ticker} ditambahkan ke watchlist")
+            else:
+                # Give option to force add
+                await validating_msg.edit_text(
+                    f"⚠️ {ticker} tidak ditemukan atau tidak valid.\n\n"
+                    f"Kemungkinan:\n"
+                    f"• Ticker salah (pastikan 4 huruf, contoh: BBCA bukan BCA)\n"
+                    f"• Saham sedang suspend\n"
+                    f"• Yahoo Finance tidak ada data\n\n"
+                    f"Gunakan /forceadd {ticker} untuk paksa tambahkan"
+                )
+        except Exception as e:
+            logger.error(f"Error validating {ticker}: {e}")
+            await validating_msg.edit_text(
+                f"❌ Error saat validasi {ticker}\n\n"
+                f"Gunakan /forceadd {ticker} untuk paksa tambahkan tanpa validasi"
+            )
     
     async def remove_from_watchlist(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Command /remove KODE"""
@@ -287,6 +305,28 @@ class TradingBot:
             await update.message.reply_text("✅ Watchlist dikosongkan")
         else:
             await update.message.reply_text("ℹ️ Watchlist sudah kosong")
+    
+    async def force_add_to_watchlist(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Command /forceadd KODE - Add without validation"""
+        if not context.args:
+            await update.message.reply_text("⚠️ Format: /forceadd KODE\nContoh: /forceadd BBCA")
+            return
+        
+        user_id = update.effective_user.id
+        ticker = context.args[0].upper()
+        
+        if user_id not in user_watchlists:
+            user_watchlists[user_id] = []
+        
+        if ticker in user_watchlists[user_id]:
+            await update.message.reply_text(f"ℹ️ {ticker} sudah ada di watchlist")
+            return
+        
+        user_watchlists[user_id].append(ticker)
+        await update.message.reply_text(
+            f"✅ {ticker} ditambahkan ke watchlist (tanpa validasi)\n\n"
+            f"⚠️ Pastikan ticker benar, karena analisis bisa gagal jika ticker salah."
+        )
     
     async def signals_today(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Command /signals - Trading signals today"""
@@ -686,6 +726,7 @@ def main():
     application.add_handler(CommandHandler("market", bot.market_overview))
     application.add_handler(CommandHandler("watchlist", bot.watchlist_menu))
     application.add_handler(CommandHandler("add", bot.add_to_watchlist))
+    application.add_handler(CommandHandler("forceadd", bot.force_add_to_watchlist))
     application.add_handler(CommandHandler("remove", bot.remove_from_watchlist))
     application.add_handler(CommandHandler("clear", bot.clear_watchlist))
     application.add_handler(CommandHandler("signals", bot.signals_today))
