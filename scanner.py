@@ -1,4 +1,4 @@
-# scanner.py - Professional Stock Scanner
+# scanner.py - Professional Stock Scanner (100% FREE - Yahoo Finance)
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -18,6 +18,38 @@ class StockScanner:
     def __init__(self):
         self.lookback_period = "6mo"
         self.interval = "1d"
+    
+    async def get_stock_info(self, ticker):
+        """Get basic stock info and current price"""
+        try:
+            # Add .JK for Indonesian stocks if not present
+            if not ticker.endswith('.JK') and len(ticker) == 4 and ticker != '^JKSE':
+                ticker = f"{ticker}.JK"
+            
+            stock = yf.Ticker(ticker)
+            info = stock.info
+            hist = stock.history(period="5d")
+            
+            if hist.empty:
+                return None
+            
+            latest = hist.iloc[-1]
+            prev = hist.iloc[-2] if len(hist) > 1 else latest
+            
+            return {
+                'ticker': ticker.replace('.JK', ''),
+                'price': latest['Close'],
+                'change': latest['Close'] - prev['Close'],
+                'change_pct': ((latest['Close'] - prev['Close']) / prev['Close']) * 100,
+                'volume': latest['Volume'],
+                'open': latest['Open'],
+                'high': latest['High'],
+                'low': latest['Low']
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting info for {ticker}: {e}")
+            return None
     
     async def comprehensive_analysis(self, ticker):
         """Comprehensive professional analysis"""
