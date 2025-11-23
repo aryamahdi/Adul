@@ -1,12 +1,12 @@
 # config.py
 # Ubah sesuai preferensi dan market-mappingmu
 
-TELEGRAM_BOT_TOKEN = "<ISI_BOT_TOKEN>"
-TELEGRAM_CHAT_ID = "<ISI_CHAT_ID>"
+TELEGRAM_BOT_TOKEN = "8395891979:AAHK_mrf5wTp8p1mTmz9tq1hecn55dEkhqE"
+TELEGRAM_CHAT_ID = "7721925871"
 
 # Scanner universe (blue-chip / big-cap) — masukkan simbol sesuai exchange
 SYMBOLS = [
-    "BBCA.JK", "BBRI.JK", "TLKM.JK", "UNVR.JK", "BMRI.JK"  # contoh IDX; sesuaikan prefix sesuai source
+    "BBCA.JK" # contoh IDX; sesuaikan prefix sesuai source
 ]
 
 # Data source config
