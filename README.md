@@ -296,9 +296,9 @@ MIT License - feel free to use for personal/commercial projects
 
 ## 📞 Support
 
-- Issues: [GitHub Issues](https://github.com/your-username/stock-scanner-bot/issues)
-- Email: your.email@example.com
-- Telegram: @yourusername
+- Issues: [GitHub Issues](https://github.com/aryamahdi/Adul/issues)
+- Email: arya.lipan18@gmail.com
+- Telegram: @adoel18
 
 ## 🔄 Updates
 
