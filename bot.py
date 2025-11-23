@@ -24,8 +24,9 @@ ADMIN_CHAT_ID = os.getenv('ADMIN_CHAT_ID')
 scanner = StockScanner()
 sectors = SectorsAPI(SECTORS_API_KEY)
 
-# Watchlist database (dalam produksi gunakan database seperti PostgreSQL)
+# Watchlist and Portfolio databases
 user_watchlists = {}
+user_portfolios = {}  # Store ManualPortfolio instances
 
 class TradingBot:
     def __init__(self):
@@ -178,7 +179,7 @@ Powered by Stockbit API
             await update.message.reply_text(f"❌ Error: {str(e)}")
     
     async def show_portfolio(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Command /portfolio - Show Stockbit portfolio"""
+        """Command /portfolio - Show manual portfolio"""
         query = update.callback_query
         if query:
             await query.answer()
@@ -186,13 +187,25 @@ Powered by Stockbit API
         else:
             message = update.message
         
-        await message.reply_text("📊 Mengambil data portfolio dari Stockbit...")
+        user_id = update.effective_user.id
+        
+        await message.reply_text("📊 Menghitung portfolio value...")
         
         try:
-            portfolio = await stockbit.get_portfolio()
+            # Get or create user portfolio
+            if user_id not in user_portfolios:
+                user_portfolios[user_id] = ManualPortfolio(user_id)
             
-            if not portfolio:
-                await message.reply_text("❌ Tidak dapat mengambil data portfolio")
+            portfolio_manager = user_portfolios[user_id]
+            portfolio = await portfolio_manager.get_portfolio_value(sectors)
+            
+            if not portfolio['holdings']:
+                await message.reply_text(
+                    "📋 Portfolio kosong\n\n"
+                    "Gunakan /addholding untuk menambah saham ke portfolio\n"
+                    "Format: /addholding BBCA 5 8500\n"
+                    "(ticker, lot, avg_price)"
+                )
                 return
             
             report = self._generate_portfolio_report(portfolio)
@@ -274,52 +287,58 @@ Powered by Stockbit API
         await update.message.reply_text(f"✅ {ticker} dihapus dari watchlist")
     
     async def signals_today(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Command /signals - Trading signals today"""
+        """Command /signals - Trading signals today using Sectors API"""
         await update.message.reply_text("🎯 Mencari setup trading terbaik hari ini...")
         
-        # Scan all IDX stocks for signals (simplified - top 50 liquid stocks)
-        idx_stocks = await stockbit.get_top_stocks(50)
-        
-        buy_signals = []
-        sell_signals = []
-        
-        for ticker in idx_stocks:
-            try:
-                analysis = await scanner.comprehensive_analysis(ticker)
-                
-                if analysis['trading_signal'] == 'STRONG BUY':
-                    buy_signals.append(analysis)
-                elif analysis['trading_signal'] == 'STRONG SELL':
-                    sell_signals.append(analysis)
+        try:
+            # Get top gainers and top active stocks from Sectors API
+            top_active = await sectors.get_most_active(limit=30)
+            
+            buy_signals = []
+            sell_signals = []
+            
+            for stock in top_active:
+                ticker = stock.get('symbol', '')
+                try:
+                    analysis = await scanner.comprehensive_analysis(ticker)
                     
-            except Exception as e:
-                continue
-        
-        # Generate signals report
-        report = "🎯 *TRADING SIGNALS HARI INI*\n"
-        report += f"⏰ {datetime.now().strftime('%d/%m/%Y %H:%M')}\n"
-        report += "=" * 30 + "\n\n"
-        
-        if buy_signals:
-            report += "🟢 *BUY SIGNALS:*\n\n"
-            for sig in buy_signals[:5]:  # Top 5
-                report += f"*{sig['ticker']}* - Rp {sig['price']:,.0f}\n"
-                report += f"{sig['trading_signal']} (Score: {sig['total_score']})\n"
-                report += f"Entry: {sig['entry_point']}\n"
-                report += f"Target: {sig['target_price']}\n"
-                report += f"SL: {sig['stop_loss']}\n\n"
-        
-        if sell_signals:
-            report += "🔴 *SELL SIGNALS:*\n\n"
-            for sig in sell_signals[:5]:  # Top 5
-                report += f"*{sig['ticker']}* - Rp {sig['price']:,.0f}\n"
-                report += f"{sig['trading_signal']} (Score: {sig['total_score']})\n\n"
-        
-        if not buy_signals and not sell_signals:
-            report += "ℹ️ Tidak ada signal kuat hari ini\n"
-            report += "Pasar sedang dalam kondisi netral"
-        
-        await update.message.reply_text(report, parse_mode='Markdown')
+                    if analysis and analysis['trading_signal'] == 'STRONG BUY':
+                        buy_signals.append(analysis)
+                    elif analysis and analysis['trading_signal'] == 'STRONG SELL':
+                        sell_signals.append(analysis)
+                        
+                except Exception as e:
+                    continue
+            
+            # Generate signals report
+            report = "🎯 *TRADING SIGNALS HARI INI*\n"
+            report += f"⏰ {datetime.now().strftime('%d/%m/%Y %H:%M')}\n"
+            report += "=" * 30 + "\n\n"
+            
+            if buy_signals:
+                report += "🟢 *BUY SIGNALS:*\n\n"
+                for sig in buy_signals[:5]:  # Top 5
+                    report += f"*{sig['ticker']}* - Rp {sig['price']:,.0f}\n"
+                    report += f"{sig['trading_signal']} (Score: {sig['total_score']})\n"
+                    report += f"Entry: {sig['entry_point']}\n"
+                    report += f"Target: {sig['target_price']}\n"
+                    report += f"SL: {sig['stop_loss']}\n\n"
+            
+            if sell_signals:
+                report += "🔴 *SELL SIGNALS:*\n\n"
+                for sig in sell_signals[:5]:  # Top 5
+                    report += f"*{sig['ticker']}* - Rp {sig['price']:,.0f}\n"
+                    report += f"{sig['trading_signal']} (Score: {sig['total_score']})\n\n"
+            
+            if not buy_signals and not sell_signals:
+                report += "ℹ️ Tidak ada signal kuat hari ini\n"
+                report += "Pasar sedang dalam kondisi netral"
+            
+            await update.message.reply_text(report, parse_mode='Markdown')
+            
+        except Exception as e:
+            logger.error(f"Error in signals_today: {e}")
+            await update.message.reply_text(f"❌ Error: {str(e)}")
     
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Command /help"""
