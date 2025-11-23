@@ -1,11 +1,10 @@
-# bot.py - Main Bot File
+# bot.py - Main Bot File (100% GRATIS - Yahoo Finance Only)
 import os
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 from scanner import StockScanner
-from sectors_api import SectorsAPI, ManualPortfolio
-from datetime import datetime, time as dt_time
+from datetime import datetime
 import asyncio
 
 # Setup logging
@@ -17,21 +16,18 @@ logger = logging.getLogger(__name__)
 
 # Environment variables
 BOT_TOKEN = os.getenv('BOT_TOKEN')
-SECTORS_API_KEY = os.getenv('SECTORS_API_KEY')
 ADMIN_CHAT_ID = os.getenv('ADMIN_CHAT_ID')
 
-# Initialize
+# Initialize scanner (Yahoo Finance - 100% gratis)
 scanner = StockScanner()
-sectors = SectorsAPI(SECTORS_API_KEY)
 
 # Watchlist and Portfolio databases
 user_watchlists = {}
-user_portfolios = {}  # Store ManualPortfolio instances
+user_portfolios = {}
 
 class TradingBot:
     def __init__(self):
         self.scanner = scanner
-        self.stockbit = stockbit
         self.is_scanning = False
         
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -43,7 +39,7 @@ class TradingBot:
         
         welcome = f"""
 🤖 *Bot Scanner Saham Professional*
-Powered by Stockbit API
+📊 Data: Yahoo Finance (100% GRATIS)
 
 👋 Selamat datang {update.effective_user.first_name}!
 
@@ -51,7 +47,7 @@ Powered by Stockbit API
 • Scanner 20+ indikator teknikal profesional
 • Analisis swing trading setup lengkap
 • Alert real-time untuk entry/exit point
-• Integrasi dengan Stockbit portfolio
+• Portfolio tracking manual
 • Auto-scan setiap jam trading
 
 📊 *Indikator yang Digunakan:*
@@ -65,10 +61,10 @@ Powered by Stockbit API
 📋 *Command:*
 /scan - Scan semua watchlist
 /analyze KODE - Analisis mendalam
-/portfolio - Lihat portfolio Stockbit
+/portfolio - Lihat portfolio manual
 /watchlist - Kelola watchlist
 /signals - Setup trading hari ini
-/screener - Screener custom
+/market - Overview pasar IDX
 /help - Bantuan lengkap
 
 ⚙️ Ketik /watchlist untuk mulai menambah saham.
@@ -189,26 +185,25 @@ Powered by Stockbit API
         
         user_id = update.effective_user.id
         
+        if user_id not in user_portfolios or not user_portfolios[user_id]:
+            await message.reply_text(
+                "📋 *Portfolio kosong*\n\n"
+                "Gunakan /addholding untuk menambah saham ke portfolio\n"
+                "Format: /addholding BBCA 5 8500\n"
+                "(ticker, lot, avg_price)\n\n"
+                "Contoh:\n"
+                "/addholding BBCA 10 8500\n"
+                "/addholding BBRI 5 4650\n"
+                "/addholding TLKM 20 3200",
+                parse_mode='Markdown'
+            )
+            return
+        
         await message.reply_text("📊 Menghitung portfolio value...")
         
         try:
-            # Get or create user portfolio
-            if user_id not in user_portfolios:
-                user_portfolios[user_id] = ManualPortfolio(user_id)
-            
-            portfolio_manager = user_portfolios[user_id]
-            portfolio = await portfolio_manager.get_portfolio_value(sectors)
-            
-            if not portfolio['holdings']:
-                await message.reply_text(
-                    "📋 Portfolio kosong\n\n"
-                    "Gunakan /addholding untuk menambah saham ke portfolio\n"
-                    "Format: /addholding BBCA 5 8500\n"
-                    "(ticker, lot, avg_price)"
-                )
-                return
-            
-            report = self._generate_portfolio_report(portfolio)
+            portfolio = user_portfolios[user_id]
+            report = await self._generate_portfolio_report(portfolio)
             await message.reply_text(report, parse_mode='Markdown')
             
         except Exception as e:
@@ -233,12 +228,9 @@ Powered by Stockbit API
         text += "\n*Commands:*\n"
         text += "/add KODE - Tambah saham\n"
         text += "/remove KODE - Hapus saham\n"
-        text += "/clear - Kosongkan watchlist\n"
-        text += "/import - Import dari Stockbit"
+        text += "/clear - Kosongkan watchlist"
         
         keyboard = [
-            [InlineKeyboardButton("➕ Tambah Saham", callback_data="add_stock")],
-            [InlineKeyboardButton("🔄 Import dari Stockbit", callback_data="import_stockbit")],
             [InlineKeyboardButton("📊 Scan Watchlist", callback_data="scan_all")],
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -286,19 +278,28 @@ Powered by Stockbit API
         user_watchlists[user_id].remove(ticker)
         await update.message.reply_text(f"✅ {ticker} dihapus dari watchlist")
     
+    async def clear_watchlist(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Command /clear - Clear watchlist"""
+        user_id = update.effective_user.id
+        
+        if user_id in user_watchlists:
+            user_watchlists[user_id] = []
+            await update.message.reply_text("✅ Watchlist dikosongkan")
+        else:
+            await update.message.reply_text("ℹ️ Watchlist sudah kosong")
+    
     async def signals_today(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Command /signals - Trading signals today using Sectors API"""
+        """Command /signals - Trading signals today"""
         await update.message.reply_text("🎯 Mencari setup trading terbaik hari ini...")
         
         try:
-            # Get top gainers and top active stocks from Sectors API
-            top_active = await sectors.get_most_active(limit=30)
+            # Scan popular IDX stocks
+            popular_stocks = ['BBCA', 'BBRI', 'BMRI', 'TLKM', 'ASII', 'UNVR', 'INDF', 'ICBP', 'KLBF', 'GGRM']
             
             buy_signals = []
             sell_signals = []
             
-            for stock in top_active:
-                ticker = stock.get('symbol', '')
+            for ticker in popular_stocks:
                 try:
                     analysis = await scanner.comprehensive_analysis(ticker)
                     
@@ -317,7 +318,7 @@ Powered by Stockbit API
             
             if buy_signals:
                 report += "🟢 *BUY SIGNALS:*\n\n"
-                for sig in buy_signals[:5]:  # Top 5
+                for sig in buy_signals[:5]:
                     report += f"*{sig['ticker']}* - Rp {sig['price']:,.0f}\n"
                     report += f"{sig['trading_signal']} (Score: {sig['total_score']})\n"
                     report += f"Entry: {sig['entry_point']}\n"
@@ -326,7 +327,7 @@ Powered by Stockbit API
             
             if sell_signals:
                 report += "🔴 *SELL SIGNALS:*\n\n"
-                for sig in sell_signals[:5]:  # Top 5
+                for sig in sell_signals[:5]:
                     report += f"*{sig['ticker']}* - Rp {sig['price']:,.0f}\n"
                     report += f"{sig['trading_signal']} (Score: {sig['total_score']})\n\n"
             
@@ -363,12 +364,19 @@ Powered by Stockbit API
                 await update.message.reply_text(f"❌ {ticker} tidak valid")
                 return
             
-            # Get or create portfolio
+            # Create portfolio if not exists
             if user_id not in user_portfolios:
-                user_portfolios[user_id] = ManualPortfolio(user_id)
+                user_portfolios[user_id] = []
             
-            portfolio = user_portfolios[user_id]
-            portfolio.add_holding(ticker, lot, avg_price)
+            # Add holding
+            holding = {
+                'ticker': ticker,
+                'lot': lot,
+                'avg_price': avg_price,
+                'date_added': datetime.now().strftime('%Y-%m-%d')
+            }
+            
+            user_portfolios[user_id].append(holding)
             
             await update.message.reply_text(
                 f"✅ Berhasil menambahkan:\n"
@@ -391,50 +399,41 @@ Powered by Stockbit API
             await update.message.reply_text("📋 Portfolio kosong")
             return
         
-        portfolio = user_portfolios[user_id]
-        portfolio.remove_holding(ticker)
+        # Remove holding
+        user_portfolios[user_id] = [h for h in user_portfolios[user_id] if h['ticker'] != ticker]
         
         await update.message.reply_text(f"✅ {ticker} dihapus dari portfolio")
     
     async def market_overview(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Command /market - Show market overview"""
-        await update.message.reply_text("📊 Mengambil data pasar...")
+        await update.message.reply_text("📊 Mengambil data pasar IDX...")
         
         try:
-            # Get IHSG data
-            ihsg = await sectors.get_idx_composite()
+            # Get IHSG and popular stocks
+            ihsg_data = await scanner.get_stock_info('^JKSE')  # IHSG
             
-            # Get top gainers and losers
-            gainers = await sectors.get_top_gainers(limit=5)
-            losers = await sectors.get_top_losers(limit=5)
-            most_active = await sectors.get_most_active(limit=5)
+            popular_stocks = ['BBCA', 'BBRI', 'BMRI', 'TLKM', 'ASII']
+            stocks_data = []
+            
+            for ticker in popular_stocks:
+                data = await scanner.get_stock_info(ticker)
+                if data:
+                    stocks_data.append(data)
             
             report = "📊 *RINGKASAN PASAR IDX*\n"
             report += f"⏰ {datetime.now().strftime('%d/%m/%Y %H:%M')}\n"
             report += "=" * 35 + "\n\n"
             
-            if ihsg:
+            if ihsg_data:
                 report += f"*IHSG*\n"
-                report += f"Level: {ihsg.get('close', 0):,.2f}\n"
-                report += f"Change: {ihsg.get('change_percent', 0):.2f}%\n\n"
+                report += f"Level: {ihsg_data['price']:,.2f}\n"
+                report += f"Change: {ihsg_data['change_pct']:.2f}%\n\n"
             
-            if gainers:
-                report += "*🟢 Top Gainers:*\n"
-                for stock in gainers[:5]:
-                    report += f"• {stock['symbol']}: +{stock.get('change_percent', 0):.2f}%\n"
-                report += "\n"
-            
-            if losers:
-                report += "*🔴 Top Losers:*\n"
-                for stock in losers[:5]:
-                    report += f"• {stock['symbol']}: {stock.get('change_percent', 0):.2f}%\n"
-                report += "\n"
-            
-            if most_active:
-                report += "*📊 Most Active:*\n"
-                for stock in most_active[:5]:
-                    vol = stock.get('volume', 0)
-                    report += f"• {stock['symbol']}: {vol/1e9:.2f}B\n"
+            if stocks_data:
+                report += "*📈 Saham Populer:*\n"
+                for stock in stocks_data:
+                    emoji = "🟢" if stock['change_pct'] > 0 else "🔴" if stock['change_pct'] < 0 else "⚪"
+                    report += f"{emoji} {stock['ticker']}: Rp {stock['price']:,.0f} ({stock['change_pct']:+.2f}%)\n"
             
             await update.message.reply_text(report, parse_mode='Markdown')
             
@@ -450,73 +449,51 @@ Powered by Stockbit API
 *🎯 ANALISIS PROFESIONAL*
 Bot ini menggunakan 20+ indikator teknikal untuk memberikan analisis swing trading yang komprehensif.
 
-*📊 INDIKATOR YANG DIGUNAKAN:*
-
-*Trend Indicators:*
-• EMA 9, 20, 50, 200
-• SMA 20, 50, 200
-• SuperTrend
-• ADX (Average Directional Index)
-• Parabolic SAR
-
-*Momentum Indicators:*
-• RSI (Relative Strength Index)
-• Stochastic Oscillator
-• CCI (Commodity Channel Index)
-• Williams %R
-• ROC (Rate of Change)
-
-*Volume Indicators:*
-• OBV (On Balance Volume)
-• VWAP (Volume Weighted Average Price)
-• Volume SMA
-• Money Flow Index (MFI)
-
-*Volatility Indicators:*
-• Bollinger Bands
-• ATR (Average True Range)
-• Keltner Channels
-• Standard Deviation
-
-*Pattern Recognition:*
-• Candlestick patterns (Doji, Hammer, etc)
-• Chart patterns (Support/Resistance)
-• Fibonacci retracements
+*📊 DATA SOURCE*
+100% GRATIS menggunakan Yahoo Finance
+✓ Real-time price data
+✓ Historical data 6 bulan
+✓ Volume & technical indicators
+✓ Semua saham IDX (.JK)
 
 *💼 COMMANDS:*
 /scan - Scan all watchlist
 /analyze KODE - Analisis mendalam
 /signals - Setup trading hari ini
-/portfolio - Portfolio Stockbit
+/portfolio - Portfolio manual
 /watchlist - Kelola watchlist
 /add KODE - Tambah ke watchlist
 /remove KODE - Hapus dari watchlist
-/screener - Custom screener
+/clear - Kosongkan watchlist
+/addholding KODE LOT PRICE - Tambah ke portfolio
+/removeholding KODE - Hapus dari portfolio
+/market - Overview pasar IDX
 
 *🎓 CARA MENGGUNAKAN:*
-1. Tambahkan saham: /add BBCA
+1. Tambah saham: /add BBCA
 2. Scan watchlist: /scan
 3. Analisis detail: /analyze BBCA
 4. Lihat signals: /signals
+5. Track portfolio: /addholding BBCA 10 8500
 
 *📈 INTERPRETASI SCORE:*
-+15 hingga +20: STRONG BUY
-+8 hingga +14: BUY
--7 hingga +7: NEUTRAL/HOLD
--8 hingga -14: SELL
--15 hingga -20: STRONG SELL
++15 to +20: STRONG BUY 🟢🟢
++8 to +14: BUY 🟢
+-7 to +7: HOLD ⚪
+-8 to -14: SELL 🔴
+-15 to -20: STRONG SELL 🔴🔴
 
 *💡 TIPS SWING TRADING:*
 • Entry saat RSI oversold + MACD crossover
 • Konfirmasi dengan volume tinggi
-• Set stop loss di bawah support terdekat
-• Target profit 1.5-2x risk (R:R ratio)
+• Set stop loss di bawah support
+• Target profit 1.5-2x risk
 • Hold 3-7 hari untuk swing trade
 
 *⚠️ DISCLAIMER:*
 Bot ini adalah tools bantu analisis. Keputusan trading tetap ada di tangan Anda. Selalu gunakan risk management yang baik.
 
-📞 Support: @yourusername
+📊 Data: Yahoo Finance (Gratis)
         """
         await update.message.reply_text(help_text, parse_mode='Markdown')
     
@@ -558,7 +535,7 @@ Bot ini adalah tools bantu analisis. Keputusan trading tetap ada di tangan Anda.
         report += f"Score: {analysis['total_score']}/20\n\n"
         
         # Entry & Targets
-        report += f"📍 *ENTRY & TARGETS*\n"
+        report += f"🎯 *ENTRY & TARGETS*\n"
         report += f"Entry Zone: {analysis['entry_point']}\n"
         report += f"Target 1: {analysis['target_price']}\n"
         report += f"Stop Loss: {analysis['stop_loss']}\n"
@@ -595,29 +572,53 @@ Bot ini adalah tools bantu analisis. Keputusan trading tetap ada di tangan Anda.
         
         return report
     
-    def _generate_portfolio_report(self, portfolio):
+    async def _generate_portfolio_report(self, portfolio):
         """Generate portfolio report"""
-        report = "💼 *STOCKBIT PORTFOLIO*\n"
+        report = "💼 *PORTFOLIO MANUAL*\n"
         report += f"⏰ {datetime.now().strftime('%d/%m/%Y %H:%M')}\n"
         report += "=" * 35 + "\n\n"
         
-        total_value = portfolio.get('total_value', 0)
-        total_pl = portfolio.get('total_pl', 0)
-        total_pl_pct = portfolio.get('total_pl_pct', 0)
+        total_cost = 0
+        total_value = 0
         
-        report += f"💰 Total Value: Rp {total_value:,.0f}\n"
-        report += f"📈 P/L: Rp {total_pl:,.0f} ({total_pl_pct:.2f}%)\n\n"
+        holdings_text = "*Holdings:*\n\n"
         
-        holdings = portfolio.get('holdings', [])
-        if holdings:
-            report += "*Holdings:*\n\n"
-            for stock in holdings:
-                report += f"*{stock['ticker']}*\n"
-                report += f"Lot: {stock['lot']}\n"
-                report += f"Avg: Rp {stock['avg_price']:,.0f}\n"
-                report += f"Current: Rp {stock['current_price']:,.0f}\n"
-                report += f"P/L: {stock['pl_pct']:.2f}%\n"
-                report += "─" * 35 + "\n\n"
+        for holding in portfolio:
+            ticker = holding['ticker']
+            lot = holding['lot']
+            avg_price = holding['avg_price']
+            
+            # Get current price
+            stock_info = await scanner.get_stock_info(ticker)
+            
+            if stock_info:
+                current_price = stock_info['price']
+                cost = lot * avg_price * 100
+                value = lot * current_price * 100
+                pl = value - cost
+                pl_pct = (pl / cost) * 100 if cost > 0 else 0
+                
+                total_cost += cost
+                total_value += value
+                
+                emoji = "🟢" if pl_pct > 0 else "🔴" if pl_pct < 0 else "⚪"
+                
+                holdings_text += f"{emoji} *{ticker}*\n"
+                holdings_text += f"Lot: {lot} | Avg: Rp {avg_price:,.0f}\n"
+                holdings_text += f"Current: Rp {current_price:,.0f}\n"
+                holdings_text += f"Value: Rp {value:,.0f}\n"
+                holdings_text += f"P/L: Rp {pl:,.0f} ({pl_pct:+.2f}%)\n"
+                holdings_text += "─" * 35 + "\n\n"
+        
+        total_pl = total_value - total_cost
+        total_pl_pct = (total_pl / total_cost) * 100 if total_cost > 0 else 0
+        
+        emoji = "🟢" if total_pl_pct > 0 else "🔴" if total_pl_pct < 0 else "⚪"
+        
+        report += f"💰 *Total Cost:* Rp {total_cost:,.0f}\n"
+        report += f"📈 *Total Value:* Rp {total_value:,.0f}\n"
+        report += f"{emoji} *P/L:* Rp {total_pl:,.0f} ({total_pl_pct:+.2f}%)\n\n"
+        report += holdings_text
         
         return report
     
@@ -665,26 +666,6 @@ Bot ini adalah tools bantu analisis. Keputusan trading tetap ada di tangan Anda.
         
         return chunks
 
-async def scheduled_scan(application):
-    """Scheduled automatic scan"""
-    while True:
-        try:
-            now = datetime.now().time()
-            
-            # Scan at 9:05 AM and 3:55 PM (market hours)
-            if (now.hour == 9 and now.minute == 5) or (now.hour == 15 and now.minute == 55):
-                logger.info("Running scheduled scan...")
-                
-                if ADMIN_CHAT_ID:
-                    # Send scan results to admin
-                    pass
-                
-            await asyncio.sleep(60)  # Check every minute
-            
-        except Exception as e:
-            logger.error(f"Error in scheduled scan: {e}")
-            await asyncio.sleep(60)
-
 def main():
     """Main function"""
     if not BOT_TOKEN:
@@ -706,6 +687,7 @@ def main():
     application.add_handler(CommandHandler("watchlist", bot.watchlist_menu))
     application.add_handler(CommandHandler("add", bot.add_to_watchlist))
     application.add_handler(CommandHandler("remove", bot.remove_from_watchlist))
+    application.add_handler(CommandHandler("clear", bot.clear_watchlist))
     application.add_handler(CommandHandler("signals", bot.signals_today))
     application.add_handler(CommandHandler("help", bot.help_command))
     
@@ -714,7 +696,7 @@ def main():
     application.add_handler(CallbackQueryHandler(bot.watchlist_menu, pattern="^show_watchlist$"))
     application.add_handler(CallbackQueryHandler(bot.show_portfolio, pattern="^show_portfolio$"))
     
-    logger.info("🤖 Bot starting...")
+    logger.info("🤖 Bot starting... (100% FREE - Yahoo Finance)")
     
     # Start bot
     application.run_polling(allowed_updates=Update.ALL_TYPES)
